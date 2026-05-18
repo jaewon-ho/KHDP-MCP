@@ -94,6 +94,37 @@ def test_submissions_list_table(
     assert "total 1" in out
 
 
+def test_submissions_licenses_table(
+    env: None, httpx_mock: Any, capsys: pytest.CaptureFixture[str],
+) -> None:
+    httpx_mock.add_response(
+        url=f"{_API}/open/dataset-submissions/licenses",
+        method="GET",
+        json=[
+            {"lId": 1, "lCode": "CC-BY-4.0", "lName": "Creative Commons BY 4.0", "lLink": "..."},
+            {"lId": 2, "lCode": "ODC-BY", "lName": "Open Data Commons BY", "lLink": "..."},
+        ],
+    )
+    rc = cli_main(["submissions", "licenses"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "CC-BY-4.0" in out
+    assert "Creative Commons BY 4.0" in out
+
+
+def test_submissions_licenses_json(
+    env: None, httpx_mock: Any, capsys: pytest.CaptureFixture[str],
+) -> None:
+    httpx_mock.add_response(
+        url=f"{_API}/open/dataset-submissions/licenses",
+        method="GET",
+        json=[{"lId": 1, "lCode": "CC0", "lName": "CC0 1.0", "lLink": "..."}],
+    )
+    rc = cli_main(["submissions", "licenses", "--json"])
+    assert rc == 0
+    assert '"lId": 1' in capsys.readouterr().out
+
+
 def test_submissions_show_defaults_to_at_1_0_0(
     env: None, httpx_mock: Any, capsys: pytest.CaptureFixture[str],
 ) -> None:

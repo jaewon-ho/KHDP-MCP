@@ -121,6 +121,7 @@ OAuth-only -- requires a cached user token (`khdp login`).
 
 ```bash
 khdp submissions list [--page N] [--limit N] [--json]
+khdp submissions licenses [--json]
 khdp submissions show <code>[@<version>] [--json]
 khdp submissions create --title T --code C [--version V] --license-id N --summary S [--policy POLICY]
 khdp submissions mkdir <code>[@<version>] --path /imaging
@@ -130,6 +131,8 @@ khdp submissions delete <code>[@<version>] --key imaging/scan.dcm
 khdp submissions submit <code>[@<version>]
 ```
 
+* `licenses` prints the (id / code / name) table that `create
+  --license-id` expects.
 * `<code>` alone defaults to `@1.0.0` (the canonical first version of
   a freshly created submission). `<code>@1.2.0` pins a version.
 * `upload` resolves `<local-file>`'s basename as the remote filename

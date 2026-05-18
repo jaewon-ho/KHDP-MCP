@@ -33,6 +33,12 @@ def add_subparser(sub: argparse._SubParsersAction) -> None:
     p_list.add_argument("--json", action="store_true")
     p_list.set_defaults(func=_cmd_list)
 
+    p_lic = sp.add_parser(
+        "licenses", help="list available licenses (use the id with `create`)",
+    )
+    p_lic.add_argument("--json", action="store_true")
+    p_lic.set_defaults(func=_cmd_licenses)
+
     p_show = sp.add_parser("show", help="show one submission detail")
     p_show.add_argument("ref", help="<code>[@<version>] (defaults to @1.0.0)")
     p_show.add_argument("--json", action="store_true")
@@ -46,7 +52,7 @@ def add_subparser(sub: argparse._SubParsersAction) -> None:
     )
     p_create.add_argument(
         "--license-id", type=int, required=True, dest="license_id",
-        help="license ID from `khdp api GET /open/dataset-submissions/licenses`",
+        help="license ID -- look one up via `khdp submissions licenses`",
     )
     p_create.add_argument("--summary", required=True)
     p_create.add_argument(
@@ -164,6 +170,25 @@ def _print_submission_list(body: Any) -> None:
         print(f"\ntotal {total}")
 
 
+def _print_licenses(body: Any) -> None:
+    if not isinstance(body, list):
+        _emit(body)
+        return
+    if not body:
+        print("(no licenses)")
+        return
+    id_w = max(len("id"), max(len(str(it.get("lId", ""))) for it in body))
+    code_w = max(len("code"), max(len(str(it.get("lCode", ""))) for it in body))
+    print(f"{'id':<{id_w}}  {'code':<{code_w}}  name")
+    print(f"{'-' * id_w}  {'-' * code_w}  ----")
+    for it in body:
+        print(
+            f"{it.get('lId', '')!s:<{id_w}}  "
+            f"{it.get('lCode', '')!s:<{code_w}}  "
+            f"{it.get('lName', '')}"
+        )
+
+
 def _print_files(body: Any) -> None:
     if not isinstance(body, dict):
         _emit(body)
@@ -195,6 +220,20 @@ def _cmd_list(session: Session, args: argparse.Namespace) -> int:
         _emit(body)
     else:
         _print_submission_list(body)
+    return 0
+
+
+def _cmd_licenses(session: Session, args: argparse.Namespace) -> int:
+    resp = session.authed_request(
+        "GET", "/open/dataset-submissions/licenses",
+    )
+    body = _try_json(resp)
+    if (rc := _check_response(resp, body)) is not None:
+        return rc
+    if args.json:
+        _emit(body)
+    else:
+        _print_licenses(body)
     return 0
 
 
