@@ -31,8 +31,10 @@ and uses [Semantic Versioning](https://semver.org/).
   - `download --max-pages N` stops after N pages; `download --dry-run`
     lists keys/sizes without fetching.
 - `khdp submissions` subcommand group:
-  - `list`, `show`, `create`, `mkdir`, `upload`, `list-files`,
-    `delete`, `submit`.
+  - `list`, `licenses`, `show`, `create`, `mkdir`, `upload`,
+    `list-files`, `delete`, `submit`.
+  - `licenses` lists the available licenses (id / code / name)
+    that `create --license-id` requires.
   - Ref form `<code>[@<version>]`; `<code>` alone defaults to `@1.0.0`
     (the canonical first version of a freshly created submission).
   - `create` POSTs the new submission (`title` / `code` / `version` /
