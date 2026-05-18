@@ -116,9 +116,27 @@ khdp datasets download <code>[@<version>] [--out DIR] [--max-pages N] [--dry-run
   `--dry-run` to list keys/sizes without fetching; use `--max-pages N`
   to stop early when only verifying the flow.
 
-### Submissions (scaffold)
-Parser is wired but per-command implementations land in a follow-up
-commit. `khdp submissions <cmd>` currently prints `not implemented yet`.
+### Submissions (your own datasets)
+OAuth-only -- requires a cached user token (`khdp login`).
+
+```bash
+khdp submissions list [--page N] [--limit N] [--json]
+khdp submissions show <code>[@<version>] [--json]
+khdp submissions create --title T --code C [--version V] --license-id N --summary S [--policy POLICY]
+khdp submissions mkdir <code>[@<version>] --path /imaging
+khdp submissions upload <code>[@<version>] <local-file> [--to /imaging] [--name new.dcm]
+khdp submissions list-files <code>[@<version>] [--path /imaging] [--json]
+khdp submissions delete <code>[@<version>] --key imaging/scan.dcm
+khdp submissions submit <code>[@<version>]
+```
+
+* `<code>` alone defaults to `@1.0.0` (the canonical first version of
+  a freshly created submission). `<code>@1.2.0` pins a version.
+* `upload` resolves `<local-file>`'s basename as the remote filename
+  unless `--name` overrides it; `--to` is the remote directory
+  (default: `/`).
+* `submit` transitions the submission from `Writing` to `AuthorReview`
+  (with co-authors) or `AdminReview` (solo).
 
 ### Escape hatch
 ```bash

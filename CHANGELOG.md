@@ -30,8 +30,20 @@ and uses [Semantic Versioning](https://semver.org/).
     (file count, byte totals formatted as KB/MB/GB).
   - `download --max-pages N` stops after N pages; `download --dry-run`
     lists keys/sizes without fetching.
-- `khdp submissions` subcommand group — parser scaffolding only;
-  per-command implementations land in a follow-up release.
+- `khdp submissions` subcommand group:
+  - `list`, `show`, `create`, `mkdir`, `upload`, `list-files`,
+    `delete`, `submit`.
+  - Ref form `<code>[@<version>]`; `<code>` alone defaults to `@1.0.0`
+    (the canonical first version of a freshly created submission).
+  - `create` POSTs the new submission (`title` / `code` / `version` /
+    `lId` / `summary` / `accessPolicy`).
+  - `mkdir --path /a/b/c` splits parent + leaf and POSTs to
+    `files/directory`.
+  - `upload <ref> <local-file> [--to /dir] [--name new.dcm]` issues a
+    presigned URL via `POST files/presigned-url` and streams the
+    payload with `PUT`.
+  - `submit` triggers the `Writing → AuthorReview / AdminReview`
+    transition on the backend.
 - `config.authorize_url` (`KHDP_AUTHORIZE_URL`) overrides the KHDP web
   URL the browser is sent to during login. Default is derived from
   `api_base` host with `/external/oauth-login`.
