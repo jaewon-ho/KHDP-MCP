@@ -20,6 +20,83 @@ from khdp.session import Session
 _POLICY_CHOICES = ["open", "restricted", "credentialed", "contributor_review"]
 
 
+# ── prompt helpers ────────────────────────────────────────────────────
+
+
+def _prompt(
+    label: str,
+    *,
+    default: str | None = None,
+    required: bool = False,
+) -> str | None:
+    """Read one line from stdin. ``required`` re-prompts until non-empty."""
+    suffix = f" ({default})" if default is not None else ""
+    while True:
+        try:
+            raw = input(f"{label}{suffix}: ").strip()
+        except EOFError as exc:
+            raise SystemExit(
+                "\n[khdp] interactive input ended unexpectedly"
+            ) from exc
+        if raw:
+            return raw
+        if default is not None:
+            return default
+        if not required:
+            return None
+        print("[khdp] this field is required")
+
+
+def _prompt_int(
+    label: str,
+    *,
+    default: int | None = None,
+    required: bool = False,
+) -> int | None:
+    while True:
+        raw = _prompt(
+            label,
+            default=None if default is None else str(default),
+            required=required,
+        )
+        if raw is None:
+            return None
+        try:
+            return int(raw)
+        except ValueError:
+            print("[khdp] please enter an integer")
+
+
+def _prompt_choice(
+    label: str,
+    choices: list[str],
+    *,
+    default: str | None = None,
+) -> str:
+    options = "/".join(c.upper() if c == default else c for c in choices)
+    while True:
+        raw = _prompt(f"{label} [{options}]", default=default)
+        if raw is None:
+            # default was None and user gave nothing; loop until one is chosen
+            print(f"[khdp] choose one of: {', '.join(choices)}")
+            continue
+        if raw in choices:
+            return raw
+        print(f"[khdp] choose one of: {', '.join(choices)}")
+
+
+def _confirm(label: str, *, default: bool = True) -> bool:
+    suffix = "[Y/n]" if default else "[y/N]"
+    raw = _prompt(f"{label} {suffix}", default="y" if default else "n")
+    return (raw or "").lower() in ("y", "yes")
+
+
+def _is_interactive(args: argparse.Namespace) -> bool:
+    if getattr(args, "no_input", False):
+        return False
+    return sys.stdin.isatty()
+
+
 # ── argparse wiring ───────────────────────────────────────────────────
 
 
@@ -44,20 +121,33 @@ def add_subparser(sub: argparse._SubParsersAction) -> None:
     p_show.add_argument("--json", action="store_true")
     p_show.set_defaults(func=_cmd_show)
 
-    p_create = sp.add_parser("create", help="create a new dataset submission")
-    p_create.add_argument("--title", required=True)
-    p_create.add_argument("--code", required=True)
+    p_create = sp.add_parser(
+        "create",
+        help=(
+            "create a new dataset submission "
+            "(prompts for missing fields on a TTY, npm-init style)"
+        ),
+    )
+    p_create.add_argument("--title")
+    p_create.add_argument("--code")
     p_create.add_argument(
-        "--version", default="1.0.0", help="semver, default 1.0.0",
+        "--version", help="semver (default: 1.0.0 if omitted)",
     )
     p_create.add_argument(
-        "--license-id", type=int, required=True, dest="license_id",
+        "--license-id", type=int, dest="license_id",
         help="license ID -- look one up via `khdp submissions licenses`",
     )
-    p_create.add_argument("--summary", required=True)
+    p_create.add_argument("--summary")
     p_create.add_argument(
-        "--policy", choices=_POLICY_CHOICES, default="open",
+        "--policy", choices=_POLICY_CHOICES,
         help="access policy (default: open)",
+    )
+    p_create.add_argument(
+        "--no-input", action="store_true", dest="no_input",
+        help=(
+            "do not prompt for missing fields; require every value via "
+            "flags. Implies --yes (skips the confirmation prompt)."
+        ),
     )
     p_create.set_defaults(func=_cmd_create)
 
@@ -250,13 +340,69 @@ def _cmd_show(session: Session, args: argparse.Namespace) -> int:
 
 
 def _cmd_create(session: Session, args: argparse.Namespace) -> int:
+    interactive = _is_interactive(args)
+
+    title = args.title
+    code = args.code
+    version = args.version or ("1.0.0" if not interactive else None)
+    license_id = args.license_id
+    summary = args.summary
+    policy = args.policy or ("open" if not interactive else None)
+
+    if interactive:
+        if not title:
+            title = _prompt("title", required=True)
+        if not code:
+            code = _prompt("code", required=True)
+        version = _prompt("version", default=version or "1.0.0")
+        if license_id is None:
+            license_id = _prompt_int(
+                "license id (run `khdp submissions licenses` to discover)",
+                required=True,
+            )
+        if not summary:
+            summary = _prompt("summary", required=True)
+        policy = _prompt_choice(
+            "access policy", _POLICY_CHOICES, default=policy or "open",
+        )
+
+    # Non-interactive (or after prompts): every field must be present.
+    missing = [
+        name for name, val in [
+            ("title", title),
+            ("code", code),
+            ("license-id", license_id),
+            ("summary", summary),
+        ] if val in (None, "")
+    ]
+    if missing:
+        flags = " ".join(f"--{m}" for m in missing)
+        raise SystemExit(
+            f"[khdp] missing required field(s): {', '.join(missing)}. "
+            f"Pass {flags} or run interactively (without --no-input)."
+        )
+
+    if interactive:
+        print(
+            "\nAbout to create:\n"
+            f"  code:    {code}\n"
+            f"  version: {version}\n"
+            f"  title:   {title}\n"
+            f"  license: {license_id}\n"
+            f"  policy:  {policy}\n"
+            f"  summary: {summary}\n"
+        )
+        if not _confirm("Create this submission?", default=True):
+            print("[khdp] aborted")
+            return 1
+
     body_req = {
-        "title": args.title,
-        "version": args.version,
-        "lId": args.license_id,
-        "code": args.code,
-        "summary": args.summary,
-        "accessPolicy": args.policy,
+        "title": title,
+        "version": version,
+        "lId": license_id,
+        "code": code,
+        "summary": summary,
+        "accessPolicy": policy,
     }
     resp = session.authed_request(
         "POST", "/open/dataset-submissions", json=body_req,

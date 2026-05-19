@@ -138,7 +138,7 @@ def test_submissions_show_defaults_to_at_1_0_0(
     assert '"code": "MY-DS"' in capsys.readouterr().out
 
 
-def test_submissions_create_posts_body(
+def test_submissions_create_no_input_with_all_flags(
     env: None, httpx_mock: Any, capsys: pytest.CaptureFixture[str],
 ) -> None:
     httpx_mock.add_response(
@@ -154,12 +154,76 @@ def test_submissions_create_posts_body(
         },
     )
     rc = cli_main([
-        "submissions", "create",
+        "submissions", "create", "--no-input",
         "--title", "T", "--code", "MY-DS",
         "--license-id", "1", "--summary", "S",
     ])
     assert rc == 0
     assert '"code": "MY-DS"' in capsys.readouterr().out
+
+
+def test_submissions_create_no_input_missing_flag_fails(
+    env: None, capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc:
+        cli_main([
+            "submissions", "create", "--no-input",
+            "--title", "T",  # missing code / license-id / summary
+        ])
+    assert "missing required field" in str(exc.value)
+
+
+def test_submissions_create_interactive_prompts_for_missing(
+    env: None, httpx_mock: Any, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    # Pretend stdin is a TTY so the create command enters interactive mode.
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+
+    # Sequence of "user keystrokes" for: title, code, version (accept default),
+    # license id, summary, policy (accept default), confirm (Y).
+    responses = iter([
+        "Interactive Title",     # title
+        "INT-DS",                # code
+        "",                       # version → accept default 1.0.0
+        "7",                      # license id
+        "an interactive summary", # summary
+        "",                       # policy → accept default open
+        "y",                      # confirm
+    ])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
+
+    httpx_mock.add_response(
+        url=f"{_API}/open/dataset-submissions",
+        method="POST",
+        match_json={
+            "title": "Interactive Title", "version": "1.0.0", "lId": 7,
+            "code": "INT-DS", "summary": "an interactive summary",
+            "accessPolicy": "open",
+        },
+        json={"code": "INT-DS", "version": "1.0.0", "status": 0, "title": "Interactive Title"},
+    )
+
+    rc = cli_main(["submissions", "create"])
+    assert rc == 0
+    out = capsys.readouterr().out
+    assert "About to create:" in out
+    assert '"code": "INT-DS"' in out
+
+
+def test_submissions_create_interactive_abort_on_no(
+    env: None, monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    monkeypatch.setattr("sys.stdin.isatty", lambda: True)
+    responses = iter([
+        "T", "C", "", "1", "S", "", "n",   # confirm = n → abort
+    ])
+    monkeypatch.setattr("builtins.input", lambda _prompt: next(responses))
+
+    rc = cli_main(["submissions", "create"])
+    assert rc == 1
+    assert "aborted" in capsys.readouterr().out
 
 
 def test_submissions_mkdir_splits_path(
