@@ -9,7 +9,13 @@ from typing import Any
 import pytest
 
 from khdp.cli import main as cli_main
-from khdp.cli_submissions import _normalise_dir, _parse_ref, _split_dir_and_name
+from khdp.cli_submissions import (
+    _load_details_from_json,
+    _load_details_from_md,
+    _normalise_dir,
+    _parse_ref,
+    _split_dir_and_name,
+)
 from khdp.oauth import TokenSet
 
 # ── pure helpers ──────────────────────────────────────────────────────
@@ -50,6 +56,59 @@ def test_normalise_dir() -> None:
     assert _normalise_dir("imaging") == "/imaging"
     assert _normalise_dir("/imaging") == "/imaging"
     assert _normalise_dir("/imaging/") == "/imaging"
+
+
+def test_load_details_from_json(tmp_path: Path) -> None:
+    p = tmp_path / "d.json"
+    p.write_text(
+        '[{"name": "Abstract", "content": "<p>a</p>"},'
+        '{"name": "Methods", "content": "<p>m</p>"}]',
+        encoding="utf-8",
+    )
+    out = _load_details_from_json(str(p))
+    assert out == [
+        {"name": "Abstract", "content": "<p>a</p>"},
+        {"name": "Methods", "content": "<p>m</p>"},
+    ]
+
+
+def test_load_details_from_json_rejects_non_array(tmp_path: Path) -> None:
+    p = tmp_path / "d.json"
+    p.write_text('{"name": "x", "content": "y"}', encoding="utf-8")
+    with pytest.raises(SystemExit):
+        _load_details_from_json(str(p))
+
+
+def test_load_details_from_json_rejects_missing_keys(tmp_path: Path) -> None:
+    p = tmp_path / "d.json"
+    p.write_text('[{"name": "x"}]', encoding="utf-8")
+    with pytest.raises(SystemExit):
+        _load_details_from_json(str(p))
+
+
+def test_load_details_from_md_splits_by_h1(tmp_path: Path) -> None:
+    p = tmp_path / "d.md"
+    p.write_text(
+        "# Abstract\n"
+        "first section body\n"
+        "second line\n"
+        "\n"
+        "# Methods\n"
+        "methods body\n",
+        encoding="utf-8",
+    )
+    out = _load_details_from_md(str(p))
+    assert out == [
+        {"name": "Abstract", "content": "first section body\nsecond line"},
+        {"name": "Methods", "content": "methods body"},
+    ]
+
+
+def test_load_details_from_md_no_sections(tmp_path: Path) -> None:
+    p = tmp_path / "d.md"
+    p.write_text("just a paragraph, no headings\n", encoding="utf-8")
+    with pytest.raises(SystemExit):
+        _load_details_from_md(str(p))
 
 
 # ── CLI integration ──────────────────────────────────────────────────
@@ -308,6 +367,85 @@ def test_submissions_delete_passes_key(env: None, httpx_mock: Any) -> None:
         "--key", "imaging/a.dcm",
     ])
     assert rc == 0
+
+
+def test_submissions_create_with_details_md(
+    env: None, httpx_mock: Any, tmp_path: Path,
+) -> None:
+    md = tmp_path / "body.md"
+    md.write_text(
+        "# Abstract\nthis is the abstract\n\n# Methods\nthe methods\n",
+        encoding="utf-8",
+    )
+    httpx_mock.add_response(
+        url=f"{_API}/open/dataset-submissions",
+        method="POST",
+        match_json={
+            "title": "T", "version": "1.0.0", "lId": 1,
+            "code": "MY-DS", "summary": "S", "accessPolicy": "open",
+            "details": [
+                {"name": "Abstract", "content": "this is the abstract"},
+                {"name": "Methods", "content": "the methods"},
+            ],
+        },
+        json={"code": "MY-DS", "version": "1.0.0", "status": 0, "title": "T"},
+    )
+    rc = cli_main([
+        "submissions", "create", "--no-input",
+        "--title", "T", "--code", "MY-DS",
+        "--license-id", "1", "--summary", "S",
+        "--details-md", str(md),
+    ])
+    assert rc == 0
+
+
+def test_submissions_update_only_changed_fields(
+    env: None, httpx_mock: Any,
+) -> None:
+    httpx_mock.add_response(
+        url=f"{_API}/open/dataset-submissions/MY-DS/1.0.0",
+        method="PATCH",
+        match_json={"title": "new title", "summary": "new summary"},
+        json={
+            "code": "MY-DS", "version": "1.0.0", "status": 0,
+            "title": "new title",
+        },
+    )
+    rc = cli_main([
+        "submissions", "update", "MY-DS",
+        "--title", "new title",
+        "--summary", "new summary",
+    ])
+    assert rc == 0
+
+
+def test_submissions_update_with_details_file(
+    env: None, httpx_mock: Any, tmp_path: Path,
+) -> None:
+    p = tmp_path / "d.json"
+    p.write_text(
+        '[{"name": "Abstract", "content": "<p>x</p>"}]',
+        encoding="utf-8",
+    )
+    httpx_mock.add_response(
+        url=f"{_API}/open/dataset-submissions/MY-DS/1.0.0",
+        method="PATCH",
+        match_json={
+            "details": [{"name": "Abstract", "content": "<p>x</p>"}],
+        },
+        json={"code": "MY-DS", "version": "1.0.0", "status": 0, "title": "T"},
+    )
+    rc = cli_main([
+        "submissions", "update", "MY-DS",
+        "--details-file", str(p),
+    ])
+    assert rc == 0
+
+
+def test_submissions_update_requires_at_least_one_field(env: None) -> None:
+    with pytest.raises(SystemExit) as exc:
+        cli_main(["submissions", "update", "MY-DS"])
+    assert "nothing to update" in str(exc.value)
 
 
 def test_submissions_submit(env: None, httpx_mock: Any) -> None:

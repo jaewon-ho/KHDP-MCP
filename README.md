@@ -124,7 +124,8 @@ khdp submissions list [--page N] [--limit N] [--json]
 khdp submissions licenses [--json]
 khdp submissions show <code>[@<version>] [--json]
 khdp submissions create                 # prompts for missing fields (npm-init style)
-khdp submissions create --title T --code C [--version V] --license-id N --summary S [--policy POLICY] [--no-input]
+khdp submissions create --title T --code C [--version V] --license-id N --summary S [--policy POLICY] [--no-input] [--details-file body.json | --details-md body.md]
+khdp submissions update <code>[@<version>] [--title T] [--code C] [--version V] [--license-id N] [--summary S] [--policy POLICY] [--details-file body.json | --details-md body.md]
 khdp submissions mkdir <code>[@<version>] --path /imaging
 khdp submissions upload <code>[@<version>] <local-file> [--to /imaging] [--name new.dcm]
 khdp submissions list-files <code>[@<version>] [--path /imaging] [--json]
@@ -132,6 +133,10 @@ khdp submissions delete <code>[@<version>] --key imaging/scan.dcm
 khdp submissions submit <code>[@<version>]
 ```
 
+* `update` patches an existing submission while it is in the
+  `Writing` stage; pass any subset of fields. `details` can be loaded
+  from a JSON file (the backend shape: `[{name, content}, ...]`) or
+  from a Markdown file where `# heading` lines define sections.
 * `create` runs interactively when stdin is a TTY -- any flag you pass
   is taken as-is, anything missing is prompted for, and a confirmation
   step prints the resolved values before the POST. Pass `--no-input`
