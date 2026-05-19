@@ -8,6 +8,8 @@ on the backend.
 from __future__ import annotations
 
 import argparse
+import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -149,7 +151,36 @@ def add_subparser(sub: argparse._SubParsersAction) -> None:
             "flags. Implies --yes (skips the confirmation prompt)."
         ),
     )
+    p_create.add_argument(
+        "--details-file", dest="details_file",
+        help="JSON file containing [{name, content}, ...]",
+    )
+    p_create.add_argument(
+        "--details-md", dest="details_md",
+        help="Markdown file -- '# heading' lines become section names",
+    )
     p_create.set_defaults(func=_cmd_create)
+
+    p_update = sp.add_parser(
+        "update",
+        help="patch fields of an existing submission (Writing stage only)",
+    )
+    p_update.add_argument("ref")
+    p_update.add_argument("--title")
+    p_update.add_argument("--code")
+    p_update.add_argument("--version")
+    p_update.add_argument("--license-id", type=int, dest="license_id")
+    p_update.add_argument("--summary")
+    p_update.add_argument("--policy", choices=_POLICY_CHOICES)
+    p_update.add_argument(
+        "--details-file", dest="details_file",
+        help="JSON file containing [{name, content}, ...]",
+    )
+    p_update.add_argument(
+        "--details-md", dest="details_md",
+        help="Markdown file -- '# heading' lines become section names",
+    )
+    p_update.set_defaults(func=_cmd_update)
 
     p_mkdir = sp.add_parser("mkdir", help="create a directory in a submission")
     p_mkdir.add_argument("ref")
@@ -235,6 +266,78 @@ def _normalise_dir(p: str) -> str:
     return "/" + stripped if stripped else "/"
 
 
+# ── details loaders ───────────────────────────────────────────────────
+
+
+def _load_details_from_json(path: str) -> list[dict[str, Any]]:
+    """Parse a JSON file of ``[{"name": ..., "content": ...}, ...]``."""
+    text = Path(path).expanduser().read_text(encoding="utf-8")
+    try:
+        data = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise SystemExit(f"[khdp] invalid JSON in {path}: {exc}") from exc
+    if not isinstance(data, list):
+        raise SystemExit(
+            f"[khdp] details JSON must be an array of {{name, content}}: {path}"
+        )
+    for i, item in enumerate(data):
+        if (
+            not isinstance(item, dict)
+            or "name" not in item
+            or "content" not in item
+        ):
+            raise SystemExit(
+                f"[khdp] details[{i}] must have 'name' and 'content' keys "
+                f"({path})"
+            )
+    return data
+
+
+def _load_details_from_md(path: str) -> list[dict[str, Any]]:
+    """Split a Markdown file by ``#`` (H1) headings.
+
+    Each H1 becomes a section ``{"name": heading, "content": body}``;
+    content is the verbatim text between this H1 and the next.
+    """
+    text = Path(path).expanduser().read_text(encoding="utf-8")
+    sections: list[dict[str, Any]] = []
+    current: dict[str, str] | None = None
+    for line in text.splitlines():
+        match = re.match(r"^#\s+(.+?)\s*$", line)
+        if match:
+            if current is not None:
+                sections.append(
+                    {"name": current["name"], "content": current["content"].strip()}
+                )
+            current = {"name": match.group(1).strip(), "content": ""}
+        elif current is not None:
+            current["content"] += line + "\n"
+    if current is not None:
+        sections.append(
+            {"name": current["name"], "content": current["content"].strip()}
+        )
+    if not sections:
+        raise SystemExit(
+            f"[khdp] no `# heading` sections found in {path}"
+        )
+    return sections
+
+
+def _resolve_details(args: argparse.Namespace) -> list[dict[str, Any]] | None:
+    """Pick whichever details source was provided (mutually exclusive)."""
+    file_path = getattr(args, "details_file", None)
+    md_path = getattr(args, "details_md", None)
+    if file_path and md_path:
+        raise SystemExit(
+            "[khdp] choose either --details-file or --details-md, not both"
+        )
+    if file_path:
+        return _load_details_from_json(file_path)
+    if md_path:
+        return _load_details_from_md(md_path)
+    return None
+
+
 # ── pretty printers ───────────────────────────────────────────────────
 
 
@@ -246,15 +349,22 @@ def _print_submission_list(body: Any) -> None:
     if not items:
         print("(no submissions)")
         return
-    print(f"{'code':<24}  {'version':<10}  {'status':<6}  title")
-    print(f"{'-' * 24}  {'-' * 10}  {'-' * 6}  -----")
+
+    def _cell(it: dict[str, Any], *keys: str) -> str:
+        for k in keys:
+            v = it.get(k)
+            if v not in (None, ""):
+                return str(v)
+        return ""
+
+    print(f"{'code':<24}  {'version':<10}  {'status':<14}  title")
+    print(f"{'-' * 24}  {'-' * 10}  {'-' * 14}  -----")
     for it in items:
-        print(
-            f"{it.get('code', it.get('ciCode', '')):<24}  "
-            f"{it.get('version', ''):<10}  "
-            f"{it.get('cvStatus', ''):<6}  "
-            f"{it.get('ciTitle', it.get('title', ''))}"
-        )
+        code = _cell(it, "code", "ciCode")
+        version = _cell(it, "version")
+        status = _cell(it, "status", "cvStatus")
+        title = _cell(it, "title", "ciTitle")
+        print(f"{code:<24}  {version:<10}  {status:<14}  {title}")
     total = body.get("totalCnt")
     if total is not None:
         print(f"\ntotal {total}")
@@ -396,7 +506,7 @@ def _cmd_create(session: Session, args: argparse.Namespace) -> int:
             print("[khdp] aborted")
             return 1
 
-    body_req = {
+    body_req: dict[str, Any] = {
         "title": title,
         "version": version,
         "lId": license_id,
@@ -404,8 +514,48 @@ def _cmd_create(session: Session, args: argparse.Namespace) -> int:
         "summary": summary,
         "accessPolicy": policy,
     }
+    details = _resolve_details(args)
+    if details is not None:
+        body_req["details"] = details
     resp = session.authed_request(
         "POST", "/open/dataset-submissions", json=body_req,
+    )
+    body = _try_json(resp)
+    if (rc := _check_response(resp, body)) is not None:
+        return rc
+    _emit(body)
+    return 0
+
+
+def _cmd_update(session: Session, args: argparse.Namespace) -> int:
+    code, version = _parse_ref(args.ref)
+    body_req: dict[str, Any] = {}
+    if args.title is not None:
+        body_req["title"] = args.title
+    if args.code is not None:
+        body_req["code"] = args.code
+    if args.version is not None:
+        body_req["version"] = args.version
+    if args.license_id is not None:
+        body_req["lId"] = args.license_id
+    if args.summary is not None:
+        body_req["summary"] = args.summary
+    if args.policy is not None:
+        body_req["accessPolicy"] = args.policy
+    details = _resolve_details(args)
+    if details is not None:
+        body_req["details"] = details
+
+    if not body_req:
+        raise SystemExit(
+            "[khdp] nothing to update -- pass at least one field "
+            "(--title / --summary / --details-file ...)"
+        )
+
+    resp = session.authed_request(
+        "PATCH",
+        f"/open/dataset-submissions/{code}/{version}",
+        json=body_req,
     )
     body = _try_json(resp)
     if (rc := _check_response(resp, body)) is not None:

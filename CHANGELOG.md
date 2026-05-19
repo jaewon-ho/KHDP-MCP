@@ -30,8 +30,15 @@ and uses [Semantic Versioning](https://semver.org/).
     (file count, byte totals formatted as KB/MB/GB).
   - `download --max-pages N` stops after N pages; `download --dry-run`
     lists keys/sizes without fetching.
+- `khdp submissions update <ref>` -- patch one or more fields of an
+  existing submission (Writing stage only). Backed by the new backend
+  `PATCH /open/dataset-submissions/:code/:version`.
+- `--details-file body.json` / `--details-md body.md` -- accepted by
+  both `create` and `update`. JSON files use the backend shape
+  `[{name, content}, ...]`; Markdown files are split by `#` (H1)
+  headings into the same shape.
 - `khdp submissions` subcommand group:
-  - `list`, `licenses`, `show`, `create`, `mkdir`, `upload`,
+  - `list`, `licenses`, `show`, `create`, `update`, `mkdir`, `upload`,
     `list-files`, `delete`, `submit`.
   - `licenses` lists the available licenses (id / code / name)
     that `create --license-id` requires.
