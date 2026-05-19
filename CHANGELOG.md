@@ -37,8 +37,11 @@ and uses [Semantic Versioning](https://semver.org/).
     that `create --license-id` requires.
   - Ref form `<code>[@<version>]`; `<code>` alone defaults to `@1.0.0`
     (the canonical first version of a freshly created submission).
-  - `create` POSTs the new submission (`title` / `code` / `version` /
-    `lId` / `summary` / `accessPolicy`).
+  - `create` runs interactively when stdin is a TTY (npm-init style):
+    each missing field is prompted with sensible defaults
+    (`version=1.0.0`, `policy=open`), then a confirmation step shows
+    the resolved values before the POST. `--no-input` forces the
+    non-interactive shape (every required value must come from a flag).
   - `mkdir --path /a/b/c` splits parent + leaf and POSTs to
     `files/directory`.
   - `upload <ref> <local-file> [--to /dir] [--name new.dcm]` issues a

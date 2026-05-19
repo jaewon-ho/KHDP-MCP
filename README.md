@@ -123,7 +123,8 @@ OAuth-only -- requires a cached user token (`khdp login`).
 khdp submissions list [--page N] [--limit N] [--json]
 khdp submissions licenses [--json]
 khdp submissions show <code>[@<version>] [--json]
-khdp submissions create --title T --code C [--version V] --license-id N --summary S [--policy POLICY]
+khdp submissions create                 # prompts for missing fields (npm-init style)
+khdp submissions create --title T --code C [--version V] --license-id N --summary S [--policy POLICY] [--no-input]
 khdp submissions mkdir <code>[@<version>] --path /imaging
 khdp submissions upload <code>[@<version>] <local-file> [--to /imaging] [--name new.dcm]
 khdp submissions list-files <code>[@<version>] [--path /imaging] [--json]
@@ -131,6 +132,11 @@ khdp submissions delete <code>[@<version>] --key imaging/scan.dcm
 khdp submissions submit <code>[@<version>]
 ```
 
+* `create` runs interactively when stdin is a TTY -- any flag you pass
+  is taken as-is, anything missing is prompted for, and a confirmation
+  step prints the resolved values before the POST. Pass `--no-input`
+  to opt out (every required value must then come from a flag); this
+  is the right mode for scripts and CI.
 * `licenses` prints the (id / code / name) table that `create
   --license-id` expects.
 * `<code>` alone defaults to `@1.0.0` (the canonical first version of
